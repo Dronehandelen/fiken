@@ -4,8 +4,6 @@ metadata:
   name: subscritpion-{{scriptNameLowerCase}}
   labels:
     app: subscritpion-{{scriptNameLowerCase}}
-  annotations:
-    checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
 
 spec:
   replicas: {{replicas}}
