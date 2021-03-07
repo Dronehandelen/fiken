@@ -1,0 +1,101 @@
+version: 2.1
+
+jobs:
+    build:
+        docker:
+            - image: cimg/node:14.15
+        steps:
+            - checkout
+            - node/install-packages:
+                  pkg-manager: yarn
+            - run:
+                  name: Build kubernetes config for subscribers
+                  command: |
+                      node createSubsFromTemplate.js
+            - persist_to_workspace:
+                  root: .
+                  paths:
+                      - node_modules
+                      - chart
+
+    deploychart:
+        docker:
+            - image: cimg/base:2020.01
+        steps:
+            - checkout
+            - attach_workspace:
+                  at: .
+            - helm/install-helm-client:
+                  version: v3.0.2
+            - gcp-cli/install
+            - gcp-cli/initialize:
+                  gcloud-service-key: GCLOUD_SERVICE_KEY
+                  google-compute-zone: GCP_COMPUTE_ZONE
+                  google-project-id: GCP_PROJECT_ID
+            - run: gcloud --quiet container clusters get-credentials ${GCP_CLUSTER_NAME}
+            - run:
+                  name: Deploy helm chart
+                  command: |
+                      helm upgrade --install fiken \
+                        --set image="dronehandelen/fiken:${CIRCLE_SHA1}" \
+                        --namespace production \
+                        ./chart
+
+    deploy_to_sentry:
+        docker:
+            - image: getsentry/sentry-cli
+        environment:
+            - SENTRY_PROJECT_NAME: 'fiken'
+        steps:
+            - checkout
+            - attach_workspace:
+                  at: .
+            - run:
+                  name: Setup sentry
+                  command: |
+                      sentry-cli --auth-token $SENTRY_AUTH_TOKEN releases new -p $SENTRY_PROJECT_NAME $CIRCLE_SHA1
+                      sentry-cli --auth-token $SENTRY_AUTH_TOKEN releases set-commits --auto $CIRCLE_SHA1
+                      sentry-cli --auth-token $SENTRY_AUTH_TOKEN releases -p $SENTRY_PROJECT_NAME finalize $CIRCLE_SHA1
+                      sentry-cli --auth-token $SENTRY_AUTH_TOKEN releases deploys $CIRCLE_SHA1 new -e production
+
+orbs:
+    helm: circleci/helm@0.2.3
+    gcp-cli: circleci/gcp-cli@1.8.3
+    node: circleci/node@4.1.0
+    docker: circleci/docker@1.5.0
+
+workflows:
+    build_deploy:
+        jobs:
+            - build
+            - docker/publish:
+                  attach-at: ./
+                  cache_from: dronehandelen/fiken:latest
+                  image: dronehandelen/fiken
+                  tag: ${CIRCLE_SHA1},latest
+                  extra_build_args: '--target prod'
+                  docker-username: DOCKER_HUB_USERNAME
+                  docker-password: DOCKER_HUB_TOKEN
+                  context:
+                      - hub
+                  requires:
+                      - build
+                  filters:
+                      branches:
+                          only: master
+            - deploychart:
+                  requires:
+                      - docker/publish
+                  context:
+                      - GCP
+                  filters:
+                      branches:
+                          only: master
+            - deploy_to_sentry:
+                  requires:
+                      - deploychart
+                  context:
+                      - sentry
+                  filters:
+                      branches:
+                          only: master

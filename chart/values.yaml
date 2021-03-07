@@ -1,0 +1,8 @@
+replicaCount: 1
+name: api
+image: smth
+port: 3000
+config:
+  googleCredentials: "this must be set"
+  redis:
+    url: "redis://redis.third-party-production"

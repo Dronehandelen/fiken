@@ -1,0 +1,9 @@
+/.idea
+/node_modules
+/third-party
+/emails
+/chart/templates/generated_subscribers.yml
+/chart/templates/generated_crons.yaml
+
+/*.log
+/tmp

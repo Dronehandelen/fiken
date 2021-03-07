@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: subscritpion-{{scriptNameLowerCase}}
+  labels:
+    app: subscritpion-{{scriptNameLowerCase}}
+  annotations:
+    checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+
+spec:
+  replicas: {{replicas}}
+  selector:
+    matchLabels:
+      app: subscritpion-{{scriptNameLowerCase}}
+  template:
+    metadata:
+      labels:
+        app: subscritpion-{{scriptNameLowerCase}}
+    spec:
+      containers:
+        - name: subscritpion-{{scriptNameLowerCase}}
+          image: {{ .Values.image }}
+          command:
+            - node
+            - ./src/subscribers
+            - {{scriptName}}
+          env:
+            - name: CONTAINER_NAME
+              value: subscritpion-{{scriptNameLowerCase}}
+            - name: EXTERNAL_STORAGE
+              value: 'bucket'
+            - name: NODE_ENV
+              value: 'production'
+            - name: CONFIG_APP_PORT
+              value: {{ .Values.port | quote }}
+            - name: REDIS_URL
+              value: {{ .Values.config.redis.url }}
+            - name: FIKEN_COMPANY_SLUG
+              valueFrom:
+                configMapKeyRef:
+                  name: fiken-config
+                  key: companySlug
+            - name: FIKEN_KEY
+              valueFrom:
+                configMapKeyRef:
+                  name: fiken-config
+                  key: key
+            - name: SENTRY_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: fiken-api-config
+                  key: sentryUrl
+          resources:
+            requests:
+              memory: {{requestMemory}}
+              cpu: '10m'
+            limits:
+              memory: {{limitMemory}}
+              cpu: '200m'
+          volumeMounts:
+            - name: fiken-api-config
+              mountPath: /secrets/google/credentials.json
+              readOnly: true
+              subPath: credentials.json
+          livenessProbe:
+            httpGet:
+              path: /_ah/health?probe=liveness
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /_ah/health?probe=readiness
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 3
+            failureThreshold: 3
+
+      volumes:
+        - name: fiken-api-config
+          configMap:
+            name: fiken-api-config
